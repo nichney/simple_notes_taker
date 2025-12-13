@@ -1,7 +1,9 @@
-from fastapi import FastAPI, Depends, Form
+from fastapi import FastAPI, Depends, Form, HTTPException, status
 import database
 from session import engine, SessionLocal
 from models import Base
+
+from schemas import UserRegister, UserOut
 
 app = FastAPI()
 
@@ -57,3 +59,19 @@ async def api_update(user_id: int, note_id: int, note_text: str, db=Depends(get_
         }
     except Exception as e:
         return {'error_message': e}
+
+
+@app.post(
+    '/api/v2/auth/register',
+    response_model=UserOut,
+    status_code=status.HTTP_201_CREATED,
+    )
+async def api_register(payload: UserRegister,  db=Depends(get_db)):
+    try:
+        user = await database.create_user(db, payload.email, payload.password)
+        return user
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(e),
+        )

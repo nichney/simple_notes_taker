@@ -1,6 +1,28 @@
 from sqlalchemy import select, func, delete, update
 from sqlalchemy.orm import Session
 from models import User, Note
+from security import hash_password
+
+
+async def create_user(db, email: str, hashed_password: str) -> User:
+    # Check if user exists by email
+    stmt = select(User).where(User.email == email)
+    res = await db.execute(stmt)
+
+    if res.scalar_one_or_none():
+        raise ValueError("User already exists")
+
+    user = User(
+        email=email,
+        user_password=hash_password(password),
+    )
+
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+
+    return user
+
 
 async def ensure_user(db, user_id: int):
     user = await db.get(User, user_id)
