@@ -1,15 +1,46 @@
+from typing import Annotated
 from fastapi import FastAPI, Depends, Form, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from jwt.exceptions import InvalidTokenError
 import database
 from session import engine, SessionLocal
 from models import Base
+from security import verify_password, create_access_token, create_refresh_token, decode_token
 
-from schemas import UserRegister, UserOut, NoteCreate, NoteUpdate, NoteOut, StatusOut
+from schemas import (
+    UserRegister, UserOut, NoteCreate, 
+    NoteUpdate, NoteOut, StatusOut, 
+    TokenResponse, LoginSchema,
+)
 
 app = FastAPI()
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v2/auth/login")
 
 async def get_db():
     async with SessionLocal() as db:
         yield db
+
+
+async def get_current_user(token: str = Depends(oauth2_scheme), db = Depends(get_db)):
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = decode_token(token)
+        user_id = payload.get('sub')
+        if payload.get('type') != 'access':
+            raise credentials_exception
+        if user_id is None:
+            raise credentials_exception
+    except InvalidTokenError:
+        raise credentials_exception
+    user = await database.get_user_by_id(db, int(user_id))
+    if user is None:
+        raise credentials_exception
+    return user
+        
 
 @app.on_event('startup')
 async def startup():
@@ -62,6 +93,23 @@ async def api_update(user_id: int, note_id: int, note_text: str, db=Depends(get_
 
 
 @app.post(
+    '/api/v2/auth/login',
+    response_model=TokenResponse,
+)
+async def api_login(data: LoginSchema, db=Depends(get_db)):
+    user = await database.get_user_by_email(db, data.email)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Incorrect email or password')
+    if not verify_password(data.password, user.user_password):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Incorrect email or password')
+
+    return {
+        'access_token': create_access_token(user.user_id),
+        'refresh_token': create_refresh_token(user.user_id),
+        'token_type': 'bearer',
+    }
+
+@app.post(
     '/api/v2/auth/register',
     response_model=UserOut,
     status_code=status.HTTP_201_CREATED,
@@ -69,7 +117,10 @@ async def api_update(user_id: int, note_id: int, note_text: str, db=Depends(get_
 async def api_register(payload: UserRegister,  db=Depends(get_db)):
     try:
         user = await database.create_user(db, payload.email, payload.password)
-        return user
+        return {
+            'id': user.user_id,
+            'email': user.user_email,
+        }
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -82,14 +133,14 @@ async def api_register(payload: UserRegister,  db=Depends(get_db)):
     response_model=NoteOut,
     status_code=status.HTTP_201_CREATED,
 )
-async def api_create_note_v2(payload: NoteCreate, db=Depends(get_db)):
-    user_id = 1  # TODO: JWT
+async def api_create_note_v2(payload: NoteCreate, db=Depends(get_db), user=Depends(get_current_user)):
+    user_id = user.user_id
 
     note_id = await database.new_note(
         db,
         user_id=user_id,
-        note_text=payload.note_text,
-        note_date=str(payload.note_date),
+        text=payload.note_text,
+        date=str(payload.note_date),
     )
 
     return {
@@ -103,8 +154,8 @@ async def api_create_note_v2(payload: NoteCreate, db=Depends(get_db)):
     '/api/v2/{note_id}',
     response_model=NoteOut,
 )
-async def api_read_note_v2(note_id: int,  db=Depends(get_db)):
-    user_id = 1  # TODO: JWT
+async def api_read_note_v2(note_id: int,  db=Depends(get_db), user=Depends(get_current_user)):
+    user_id = user.user_id
 
     try:
         note_date, note_text = await database.get_note(db, user_id, note_id)
@@ -121,8 +172,8 @@ async def api_read_note_v2(note_id: int,  db=Depends(get_db)):
     '/api/v2/{note_id}',
     response_model=StatusOut,
 )
-async def api_update_note_v2(note_id: int, payload: NoteUpdate, db=Depends(get_db)):
-    user_id = 1 # TODO: JWT
+async def api_update_note_v2(note_id: int, payload: NoteUpdate, db=Depends(get_db), user=Depends(get_current_user)):
+    user_id = user_user_id
 
     try:
         result = await database.update_note(
@@ -140,8 +191,8 @@ async def api_update_note_v2(note_id: int, payload: NoteUpdate, db=Depends(get_d
     '/api/v2/{note_id}',
     response_model=StatusOut,
 )
-async def api_delete_note_v2(note_id: int, db=Depends(get_db)):
-    user_id = 1 # TODO: JWT
+async def api_delete_note_v2(note_id: int, db=Depends(get_db), user=Depends(get_current_user)):
+    user_id = user_id
 
     try:
         result = await database.delete_note(db, user_id, note_id)

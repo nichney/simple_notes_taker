@@ -34,3 +34,16 @@ class NoteOut(BaseModel):
 
 class StatusOut(BaseModel):
     status: bool
+
+
+# SCHEMAS FOR TOKENS
+
+class LoginSchema(BaseModel):
+    email: str
+    password: str
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str
