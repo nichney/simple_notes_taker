@@ -4,16 +4,28 @@ from models import User, Note
 from security import hash_password
 
 
-async def create_user(db, email: str, hashed_password: str) -> User:
+async def get_user_by_email(db, email: str):
+    stmt = select(User).where(User.user_email == email)
+    result = await db.execute(stmt)
+    return result.scalar_one_or_none()
+
+
+async def get_user_by_id(db, user_id: int):
+    stmt = select(User).where(User.user_id == user_id)
+    result = await db.execute(stmt)
+    return result.scalar_one_or_none()
+
+
+async def create_user(db, email: str, password: str) -> User:
     # Check if user exists by email
-    stmt = select(User).where(User.email == email)
+    stmt = select(User).where(User.user_email == email)
     res = await db.execute(stmt)
 
     if res.scalar_one_or_none():
         raise ValueError("User already exists")
 
     user = User(
-        email=email,
+        user_email=email,
         user_password=hash_password(password),
     )
 
