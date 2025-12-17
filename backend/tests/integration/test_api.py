@@ -6,11 +6,41 @@ from sqlalchemy.ext.asyncio import (
     AsyncSession,
 )
 
-from main import app, get_db
+from main import app, get_db, get_redis
 from models import Base
 
 
+class FakeRedis:
+    def __init__(self):
+        self.storage = {}
+
+    async def set(self, key, value, ex=None):
+        self.storage[key] = value
+
+    async def exists(self, key):
+        return 1 if key in self.storage else 0
+
+    async def delete(self, key):
+        self.storage.pop(key, None)
+
+
 DATABASE_URL = "sqlite+aiosqlite:///:memory:"
+
+
+@pytest.fixture
+def fake_redis():
+    return FakeRedis()
+
+
+@pytest.fixture(autouse=True)
+def override_redis(fake_redis):
+    async def _get_redis():
+        yield fake_redis
+
+    app.dependency_overrides[get_redis] = _get_redis
+    yield
+    app.dependency_overrides.clear()
+
 
 @pytest.fixture(scope="module")
 async def async_engine():
@@ -254,3 +284,16 @@ def test_delete_note_unauthorized(client, note_fixture):
         f'/api/v2/{note_fixture["note_id"]}'
     )
     assert response.status_code == 401
+
+
+def test_refresh_token_success(client, fake_redis, logged_in_user_data):
+    response = client.post(
+        '/api/v2/auth/refresh',
+        json={'refresh_token': logged_in_user_data['refresh_token']},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert "access_token" in data
+    assert "refresh_token" in data
+    assert data["token_type"] == "bearer"
+    assert f"{logged_in_user_data['refresh_token']}" not in fake_redis.storage
