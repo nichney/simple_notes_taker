@@ -1,4 +1,5 @@
 from typing import Annotated
+import os
 from fastapi import FastAPI, Depends, Form, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jwt.exceptions import InvalidTokenError
@@ -11,7 +12,16 @@ from schemas import (
     UserRegister, UserOut, NoteCreate, 
     NoteUpdate, NoteOut, StatusOut, 
     TokenResponse, LoginSchema,
+    TokenRotation,
 )
+from token_rotation_logic import (
+    save_refresh_token,
+    is_refresh_token_valid,
+    delete_refresh_token,
+)
+
+import redis.asyncio as redis
+
 
 app = FastAPI()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v2/auth/login")
@@ -19,6 +29,19 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v2/auth/login")
 async def get_db():
     async with SessionLocal() as db:
         yield db
+
+async def get_redis():
+    REDIS_HOST = os.getenv('REDIS_HOST')
+    REDIS_PORT = int(os.getenv('REDIS_PORT'))
+    redis_client = redis.Redis(
+        host=REDIS_HOST,
+        port=REDIS_PORT,
+        decode_responses=True,
+    )
+    try: 
+        yield redis_client
+    finally:
+        await redis_client.close()
 
 
 async def get_current_user(token: str = Depends(oauth2_scheme), db = Depends(get_db)):
@@ -48,19 +71,60 @@ async def startup():
         await conn.run_sync(Base.metadata.create_all)
 
 @app.post(
+    '/api/v2/auth/refresh',
+    response_model=TokenResponse
+)
+async def api_refresh(data: TokenRotation, redis=Depends(get_redis)):
+    token_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid refresh token",
+    )
+    try:
+        payload = decode_token(data.refresh_token)
+        try:
+            user_id = int(payload.get("sub"))
+        except (TypeError, ValueError):
+            raise token_exception
+        if payload.get('type') != 'refresh':
+            raise token_exception
+    except InvalidTokenError:
+        raise token_exception
+
+    if not await is_refresh_token_valid(redis, data.refresh_token):
+        raise token_exception
+
+    await delete_refresh_token(redis, data.refresh_token)
+
+    new_access = create_access_token(user_id)
+    new_refresh = create_refresh_token(user_id)
+
+    await save_refresh_token(redis, new_refresh, user_id)
+
+    return {
+        'access_token': new_access,
+        'refresh_token': new_refresh,
+        'token_type': 'bearer',
+    }
+
+
+@app.post(
     '/api/v2/auth/login',
     response_model=TokenResponse,
 )
-async def api_login(data: LoginSchema, db=Depends(get_db)):
+async def api_login(data: LoginSchema, db=Depends(get_db), redis=Depends(get_redis)):
     user = await database.get_user_by_email(db, data.email)
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Incorrect email or password')
     if not verify_password(data.password, user.user_password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Incorrect email or password')
 
+    new_access = create_access_token(user.user_id)
+    new_refresh = create_refresh_token(user.user_id)
+    await save_refresh_token(redis, new_refresh, user.user_id)
+
     return {
-        'access_token': create_access_token(user.user_id),
-        'refresh_token': create_refresh_token(user.user_id),
+        'access_token': new_access,
+        'refresh_token': new_refresh,
         'token_type': 'bearer',
     }
 
