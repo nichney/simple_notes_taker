@@ -153,6 +153,7 @@ async def api_create_note_v2(payload: NoteCreate, db=Depends(get_db), user=Depen
 @app.get(
     '/api/v2/{note_id}',
     response_model=NoteOut,
+    status_code=200
 )
 async def api_read_note_v2(note_id: int,  db=Depends(get_db), user=Depends(get_current_user)):
     user_id = user.user_id
@@ -173,7 +174,7 @@ async def api_read_note_v2(note_id: int,  db=Depends(get_db), user=Depends(get_c
     response_model=StatusOut,
 )
 async def api_update_note_v2(note_id: int, payload: NoteUpdate, db=Depends(get_db), user=Depends(get_current_user)):
-    user_id = user_user_id
+    user_id = user.user_id
 
     try:
         result = await database.update_note(
@@ -192,7 +193,7 @@ async def api_update_note_v2(note_id: int, payload: NoteUpdate, db=Depends(get_d
     response_model=StatusOut,
 )
 async def api_delete_note_v2(note_id: int, db=Depends(get_db), user=Depends(get_current_user)):
-    user_id = user_id
+    user_id = user.user_id
 
     try:
         result = await database.delete_note(db, user_id, note_id)
