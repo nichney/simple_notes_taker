@@ -1,6 +1,5 @@
 import pytest
 from fastapi.testclient import TestClient
-from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import (
     create_async_engine,
     async_sessionmaker,
@@ -240,6 +239,8 @@ def test_delete_note(client, note_fixture):
         f'/api/v2/{note_fixture["note_id"]}',
         headers=note_fixture['auth_header']
     )
+    assert response.status_code == 200
+    assert response.json()['status']
 
 def test_delete_note_invalid_id(client, note_fixture):
     response = client.delete(
