@@ -36,15 +36,8 @@ async def create_user(db, email: str, password: str) -> User:
     return user
 
 
-async def ensure_user(db, user_id: int):
-    user = await db.get(User, user_id)
-    if not user:
-        user = User(user_id=user_id)
-        db.add(user)
-        await db.commit()
-
 async def new_note(db, user_id: int, text: str, date: str):
-    await ensure_user(db, user_id)
+    #await ensure_user(db, user_id)
 
     # max(note_id)
     stmt = select(func.max(Note.note_id)).where(Note.user_id == user_id)
@@ -65,7 +58,7 @@ async def new_note(db, user_id: int, text: str, date: str):
 
 
 async def get_note(db, user_id: int, note_id: int):
-    await ensure_user(db, user_id)
+    #await ensure_user(db, user_id)
 
     stmt = (
         select(Note)
@@ -83,7 +76,7 @@ async def get_note(db, user_id: int, note_id: int):
 
 
 async def delete_note(db, user_id: int, note_id: int):
-    await ensure_user(db, user_id)
+    #await ensure_user(db, user_id)
 
     stmt_check = (
         select(Note)
@@ -107,7 +100,7 @@ async def delete_note(db, user_id: int, note_id: int):
     return True
 
 async def update_note(db, user_id: int, note_id: int, note_text: str):
-    await ensure_user(db, user_id)
+    #await ensure_user(db, user_id)
 
     stmt_check = (
         select(Note)
