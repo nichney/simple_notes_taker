@@ -70,6 +70,33 @@ async def startup():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
+
+@app.post(
+    'api/v2/auth/logout',
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def api_logout(data:TokenRotation, redis=Depends(get_redis)):
+    token_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid refresh token",
+    )
+    try:
+        payload = decode_token(data.refresh_token)
+        try:
+            user_id = int(payload.get("sub"))
+        except (TypeError, ValueError):
+            raise token_exception
+        if payload.get('type') != 'refresh':
+            raise token_exception
+    except InvalidTokenError:
+        raise token_exception
+
+    if not await is_refresh_token_valid(redis, data.refresh_token):
+        raise token_exception
+
+    await delete_refresh_token(redis, data.refresh_token)
+
+
 @app.post(
     '/api/v2/auth/refresh',
     response_model=TokenResponse
