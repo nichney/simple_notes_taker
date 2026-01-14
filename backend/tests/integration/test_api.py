@@ -13,15 +13,24 @@ from models import Base
 class FakeRedis:
     def __init__(self):
         self.storage = {}
+        self.ttls = {}
 
     async def set(self, key, value, ex=None):
         self.storage[key] = value
+        if ex is not None:
+            self.ttls[key] = ex
 
     async def exists(self, key):
         return 1 if key in self.storage else 0
 
     async def delete(self, key):
         self.storage.pop(key, None)
+        self.ttls.pop(key, None)
+    
+    async def ttl(self, key):
+        if key not in self.storage:
+            return -2
+        return self.ttls.get(key, -1)
 
 
 DATABASE_URL = "sqlite+aiosqlite:///:memory:"
