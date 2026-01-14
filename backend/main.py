@@ -18,6 +18,7 @@ from token_rotation_logic import (
     save_refresh_token,
     is_refresh_token_valid,
     delete_refresh_token,
+    update_refresh_token,
 )
 
 import redis.asyncio as redis
@@ -120,12 +121,13 @@ async def api_refresh(data: TokenRotation, redis=Depends(get_redis)):
     if not await is_refresh_token_valid(redis, data.refresh_token):
         raise token_exception
 
-    await delete_refresh_token(redis, data.refresh_token)
-
     new_access = create_access_token(user_id)
     new_refresh = create_refresh_token(user_id)
 
-    await save_refresh_token(redis, new_refresh, user_id)
+    try:
+        await update_refresh_token(redis, data.refresh_token, new_refresh, user_id)
+    except ValueError:
+        raise token_exception
 
     return {
         'access_token': new_access,
