@@ -1,4 +1,18 @@
 services:
+  backend:
+    build:
+      context: ./backend
+    env_file:
+      - .env
+    container_name: notes_backend
+    ports:
+      - "8000:8000"
+    networks:
+      - notes_net
+    depends_on:
+      - db
+      - redis
+
   db:
     image: postgres:16
     container_name: notes_postgres
@@ -10,6 +24,8 @@ services:
       - postgres_data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
+    networks:
+      - notes_net
 
   redis:
     image: redis:7
@@ -19,6 +35,12 @@ services:
       - redis_data:/data
     ports:
       - "6379:6379"
+    networks:
+      - notes_net
+
+networks:
+  notes_net:
+    driver: bridge
 
 volumes:
   postgres_data:
